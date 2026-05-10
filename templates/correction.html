@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Correction & GPS{% endblock %}
+{% block page_title %}🔧 Onglet 4 — Correction & Association GPS{% endblock %}
+{% block page_sub %}RapidFuzz + Géolocalisation des adresses de livraison{% endblock %}
+{% block content %}
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header"><div class="card-icon">⚙️</div><div class="card-title">Paramètres de correction</div></div>
+    <div class="form-group">
+      <label class="form-label">Seuil de similarité minimum (%)</label>
+      <input type="range" id="seuil" min="50" max="99" value="75" class="range-input"
+             oninput="document.getElementById('seuil-val').textContent=this.value+'%'">
+      <div style="display:flex;justify-content:space-between;margin-top:6px;">
+        <span style="font-size:0.75rem;color:var(--texte-sec);">50% — Permissif</span>
+        <span id="seuil-val" style="font-weight:800;color:var(--bleu);font-family:'JetBrains Mono',monospace;">75%</span>
+        <span style="font-size:0.75rem;color:var(--texte-sec);">99% — Strict</span>
+      </div>
+    </div>
+    <div class="alert alert-info" style="margin-bottom:16px;">ℹ️ RapidFuzz compare chaque adresse au référentiel RNVP par similarité de chaîne (algorithme Levenshtein).</div>
+    <button class="btn btn-primary" id="btn-corriger" onclick="lancerCorrection()" style="width:100%;">🔍 Lancer la Correction</button>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-icon">📊</div><div class="card-title">Résultats</div></div>
+    <div id="corr-stats"><div style="color:var(--texte-sec);text-align:center;padding:32px;font-size:0.875rem;">Lancez la correction pour voir les résultats</div></div>
+  </div>
+</div>
+
+<div class="card" id="corr-table-card" style="display:none;">
+  <div class="card-header">
+    <div class="card-icon">📋</div>
+    <div class="card-title">Détail des corrections</div>
+    <div style="margin-left:auto;"><a href="{{ url_for('optimisation') }}" class="btn btn-primary btn-sm" id="btn-next">🚀 Étape suivante →</a></div>
+  </div>
+  <div id="corr-table"></div>
+</div>
+
+{% endblock %}
+{% block extra_js %}
+<script>
+function lancerCorrection() {
+  const btn=document.getElementById('btn-corriger');
+  btn.disabled=true;
+  showLoading('Correction RapidFuzz en cours...');
+  const seuil=parseFloat(document.getElementById('seuil').value);
+  fetch('/api/corriger',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({seuil})})
+  .then(r=>r.json()).then(d=>{
+    hideLoading(); btn.disabled=false;
+    if(!d.success){document.getElementById('corr-stats').innerHTML=`<div class="alert alert-error">❌ ${d.message}</div>`;return;}
+    const taux=d.taux;
+    const cl=taux>=90?'var(--vert)':taux>=75?'var(--jaune-f)':'var(--rouge)';
+    document.getElementById('corr-stats').innerHTML=`
+      <div class="metrics-grid" style="grid-template-columns:1fr 1fr;">
+        <div class="metric-card vert"><span class="metric-icon">✅</span><div><div class="metric-val vert">${d.ok}</div><div class="metric-lbl">Trouvées</div></div></div>
+        <div class="metric-card rouge"><span class="metric-icon">❌</span><div><div class="metric-val rouge">${d.echec}</div><div class="metric-lbl">Non trouvées</div></div></div>
+      </div>
+      <div style="margin-top:14px;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:0.82rem;">
+          <span style="font-weight:700;">Taux de succès</span>
+          <span style="font-weight:800;color:${cl};font-family:'JetBrains Mono',monospace;">${taux}%</span>
+        </div>
+        <div class="progress-wrap"><div class="progress-bar" style="width:${taux}%;"></div></div>
+      </div>
+      <div style="margin-top:12px;text-align:center;font-size:0.85rem;color:var(--texte-sec);">Score moyen : <strong style="color:var(--bleu);">${d.score_moy}%</strong></div>`;
+    const cols=['ADRESSE_ORIGINALE','ADRESSE_CORRIGEE','SCORE_FUZZY','STATUT','LATITUDE','LONGITUDE'];
+    const colsDispo=cols.filter(c=>d.apercu[0]&&c in d.apercu[0]);
+    renderTable('corr-table', d.apercu, colsDispo);
+    document.getElementById('corr-table-card').style.display='block';
+    toast('Correction terminée !');
+  }).catch(()=>{hideLoading();btn.disabled=false;toast('Erreur','error');});
+}
+</script>
+{% endblock %}

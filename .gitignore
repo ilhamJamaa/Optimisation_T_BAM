@@ -1,0 +1,15 @@
+# Fichiers de données (Confidentialité Poste Maroc)
+*.xlsx
+*.xls
+*.csv
+/data/
+
+# Environnement virtuel et configuration
+venv/
+.env
+__pycache__/
+*.pyc
+
+# Fichiers système
+.DS_Store
+Thumbs.db

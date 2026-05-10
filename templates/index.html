@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Tableau de bord{% endblock %}
+{% block page_title %}🏠 Tableau de bord{% endblock %}
+{% block page_sub %}Vue d'ensemble du système — Poste Maroc{% endblock %}
+{% block content %}
+
+<!-- Pipeline -->
+<div class="pipeline">
+  {% set steps = [('RNVP','rnvp_voie_ok'),('Géocodage','rnvp_voie_ok'),('Colis','colis_ok'),('Correction','corriges_ok'),('Optimisation','tournees_ok'),('Carte','tournees_ok'),('ML','false')] %}
+  {% for label, key in steps %}
+  <div class="pipeline-step {% if stats.get(key) %}done{% endif %}">
+    <div class="step-num">{% if stats.get(key) %}✓{% else %}{{ loop.index }}{% endif %}</div>
+    <div>{{ label }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Métriques -->
+<div class="metrics-grid">
+  <div class="metric-card">
+    <span class="metric-icon">🏙️</span>
+    <div><div class="metric-val">{{ stats.rnvp_voie_count | default(0) }}</div><div class="metric-lbl">Voies géocodées</div></div>
+  </div>
+  <div class="metric-card jaune">
+    <span class="metric-icon">🏘️</span>
+    <div><div class="metric-val jaune">{{ stats.rnvp_qrt_count | default(0) }}</div><div class="metric-lbl">Quartiers géocodés</div></div>
+  </div>
+  <div class="metric-card vert">
+    <span class="metric-icon">📦</span>
+    <div><div class="metric-val vert">{{ stats.colis_count | default(0) }}</div><div class="metric-lbl">Colis du jour</div></div>
+  </div>
+  <div class="metric-card">
+    <span class="metric-icon">📅</span>
+    <div><div class="metric-val">{{ stats.nb_jours | default(0) }}</div><div class="metric-lbl">Jours enregistrés</div></div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <!-- Statut système -->
+  <div class="card">
+    <div class="card-header"><div class="card-icon">⚙️</div><div class="card-title">Statut du système</div></div>
+    {% set checks = [
+      ('📋 RNVP Voie géocodé', stats.rnvp_voie_ok, 'Prêt', 'À configurer'),
+      ('🏘️ RNVP Quartier géocodé', stats.rnvp_qrt_ok, 'Prêt', 'À configurer'),
+      ('📦 Colis du jour importés', stats.colis_ok, 'Importé', 'En attente'),
+      ('🔧 Adresses corrigées', stats.corriges_ok, 'Corrigé', 'En attente'),
+      ('🚀 Tournées optimisées', stats.tournees_ok, 'Optimisé', 'En attente'),
+    ] %}
+    {% for label, ok, txt_ok, txt_ko in checks %}
+    <div class="stat-row">
+      <span class="stat-key">{{ label }}</span>
+      {% if ok %}<span class="badge badge-ok">✅ {{ txt_ok }}</span>
+      {% else %}<span class="badge badge-warn">⏳ {{ txt_ko }}</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Actions rapides -->
+  <div class="card">
+    <div class="card-header"><div class="card-icon">⚡</div><div class="card-title">Actions rapides</div></div>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <a href="{{ url_for('rnvp') }}"        class="btn btn-secondary">📋 Charger le fichier RNVP</a>
+      <a href="{{ url_for('colis') }}"        class="btn btn-secondary">📦 Importer les colis du jour</a>
+      <a href="{{ url_for('correction') }}"   class="btn btn-secondary">🔧 Corriger les adresses</a>
+      <a href="{{ url_for('optimisation') }}" class="btn btn-primary">🚀 Lancer l'optimisation</a>
+      <a href="{{ url_for('carte') }}"        class="btn btn-secondary">🗺️ Voir la carte</a>
+      <a href="{{ url_for('predictions') }}"  class="btn btn-jaune">🤖 Prédictions ML</a>
+    </div>
+  </div>
+</div>
+
+{% if stats.total_colis %}
+<div class="card">
+  <div class="card-header"><div class="card-icon">📊</div><div class="card-title">Historique global</div></div>
+  <div class="grid-3">
+    <div style="text-align:center;padding:16px;background:var(--bleu-l);border-radius:10px;">
+      <div style="font-size:2rem;font-weight:800;color:var(--bleu);font-family:'JetBrains Mono',monospace;">{{ stats.total_colis }}</div>
+      <div style="font-size:0.75rem;color:var(--texte-sec);text-transform:uppercase;font-weight:700;margin-top:4px;">Total colis traités</div>
+    </div>
+    <div style="text-align:center;padding:16px;background:var(--jaune-l);border-radius:10px;">
+      <div style="font-size:2rem;font-weight:800;color:var(--jaune-f);font-family:'JetBrains Mono',monospace;">{{ stats.nb_jours }}</div>
+      <div style="font-size:0.75rem;color:var(--texte-sec);text-transform:uppercase;font-weight:700;margin-top:4px;">Jours d'historique</div>
+    </div>
+    <div style="text-align:center;padding:16px;background:var(--vert-l);border-radius:10px;">
+      <div style="font-size:2rem;font-weight:800;color:var(--vert);font-family:'JetBrains Mono',monospace;">
+        {{ (stats.total_colis / stats.nb_jours) | round(0) | int if stats.nb_jours > 0 else 0 }}
+      </div>
+      <div style="font-size:0.75rem;color:var(--texte-sec);text-transform:uppercase;font-weight:700;margin-top:4px;">Moyenne colis/jour</div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

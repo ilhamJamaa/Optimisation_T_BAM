@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}RNVP & Géocodage{% endblock %}
+{% block page_title %}📋 Onglet 2 — RNVP & Géocodage{% endblock %}
+{% block page_sub %}Référentiel National des Voies Postales — Installation initiale par ville{% endblock %}
+{% block content %}
+
+<div class="alert alert-info">ℹ️ Cette étape se fait <strong>une seule fois par ville</strong>. Le géocodage transforme chaque adresse en coordonnées GPS. Durée : ~2h20 pour Casablanca.</div>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header"><div class="card-icon">📂</div><div class="card-title">Étape 1 — Charger le fichier RNVP</div></div>
+    <div class="upload-zone" id="rnvp-zone">
+      <input type="file" id="rnvp-input" accept=".xlsx">
+      <div class="upload-icon">📊</div>
+      <div class="upload-title">Glissez ou cliquez</div>
+      <div class="upload-sub">Format .xlsx — feuilles VOIE + QUARTIER</div>
+    </div>
+    <div id="rnvp-result" style="margin-top:14px;"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-icon">📊</div><div class="card-title">Statistiques du fichier</div></div>
+    <div id="rnvp-stats"><div style="color:var(--texte-sec);text-align:center;padding:32px;font-size:0.875rem;">Chargez un fichier pour voir les statistiques</div></div>
+  </div>
+</div>
+
+<!-- Config géocodage -->
+<div class="card" id="geo-config-card" style="display:none;">
+  <div class="card-header"><div class="card-icon">🌍</div><div class="card-title">Étape 2 — Configurer et lancer le géocodage</div></div>
+  <div class="grid-2" style="margin-bottom:16px;">
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Nom de la ville</label>
+      <input type="text" id="geo-ville" class="form-input" value="Casablanca" placeholder="Rabat, Fes, Marrakech...">
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Pays</label>
+      <input type="text" id="geo-pays" class="form-input" value="Maroc">
+    </div>
+  </div>
+  <div style="display:flex;gap:12px;align-items:center;">
+    <button class="btn btn-primary" id="btn-geo" onclick="lancerGeocodage()">🌍 Lancer le Géocodage</button>
+    <button class="btn btn-secondary" id="btn-stop" onclick="stopperGeocodage()" style="display:none;">⏹️ Arrêter</button>
+    <span id="geo-status" style="font-size:0.85rem;color:var(--texte-sec);"></span>
+  </div>
+</div>
+
+<!-- Progression -->
+<div class="card" id="geo-progress-card" style="display:none;">
+  <div class="card-header"><div class="card-icon">⚡</div><div class="card-title">Progression en temps réel</div></div>
+  <div style="margin-bottom:18px;">
+    <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+      <span style="font-weight:800;font-size:1.1rem;color:var(--bleu);" id="pct-val">0%</span>
+      <span style="font-size:0.8rem;color:var(--texte-sec);" id="compteur-val">0 / 0</span>
+    </div>
+    <div class="progress-wrap"><div class="progress-bar" id="prog-bar" style="width:0%;"></div></div>
+    <div style="margin-top:6px;font-size:0.8rem;color:var(--texte-sec);" id="feuille-val">En attente...</div>
+  </div>
+  <div class="grid-4" style="margin-bottom:16px;">
+    <div class="metric-card vert"><span class="metric-icon">✅</span><div><div class="metric-val vert" id="m-ok" style="font-size:1.3rem;">0</div><div class="metric-lbl">OK</div></div></div>
+    <div class="metric-card jaune"><span class="metric-icon">⚠️</span><div><div class="metric-val jaune" id="m-app" style="font-size:1.3rem;">0</div><div class="metric-lbl">Approx.</div></div></div>
+    <div class="metric-card rouge"><span class="metric-icon">❌</span><div><div class="metric-val rouge" id="m-err" style="font-size:1.3rem;">0</div><div class="metric-lbl">Échec</div></div></div>
+    <div class="metric-card"><span class="metric-icon">⏱️</span><div><div class="metric-val" id="m-time" style="font-size:1.1rem;">--:--</div><div class="metric-lbl">Restant</div></div></div>
+  </div>
+  <div style="font-size:0.75rem;color:var(--texte-sec);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Journal</div>
+  <div class="geo-log" id="geo-log"><span style="color:#9E9E9E;">En attente...</span></div>
+</div>
+
+<!-- Résultat final -->
+<div class="card" id="geo-done-card" style="display:none;">
+  <div class="card-header"><div class="card-icon">🎉</div><div class="card-title">Géocodage terminé !</div></div>
+  <div id="geo-done-content"></div>
+  <div style="margin-top:16px;"><a href="{{ url_for('colis') }}" class="btn btn-primary">📦 Étape suivante →</a></div>
+</div>
+
+<!-- Aperçus -->
+<div class="card" id="apercu-voie" style="display:none;">
+  <div class="card-header"><div class="card-icon">🏙️</div><div class="card-title">Aperçu — Feuille VOIE</div></div>
+  <div id="apercu-voie-table"></div>
+</div>
+<div class="card" id="apercu-qrt" style="display:none;">
+  <div class="card-header"><div class="card-icon">🏘️</div><div class="card-title">Aperçu — Feuille QUARTIER</div></div>
+  <div id="apercu-qrt-table"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let es=null, debutTs=null, totalGeo=0;
+initUploadZone('rnvp-zone','rnvp-input',uploadRNVP);
+
+function uploadRNVP(file) {
+  showLoading('Chargement RNVP...');
+  const fd=new FormData(); fd.append('file',file);
+  fetch('/api/upload_rnvp',{method:'POST',body:fd}).then(r=>r.json()).then(d=>{
+    hideLoading();
+    if(!d.success){document.getElementById('rnvp-result').innerHTML=`<div class="alert alert-error">❌ ${d.message}</div>`;return;}
+    document.getElementById('rnvp-result').innerHTML=`<div class="alert alert-success">✅ ${d.voie_count.toLocaleString()} voies + ${d.qrt_count.toLocaleString()} quartiers chargés</div>`;
+    document.getElementById('rnvp-stats').innerHTML=`
+      <div class="grid-2">
+        <div style="text-align:center;padding:16px;background:var(--bleu-l);border-radius:10px;">
+          <div style="font-size:1.8rem;font-weight:800;color:var(--bleu);font-family:'JetBrains Mono',monospace;">${d.voie_count.toLocaleString()}</div>
+          <div style="font-size:0.75rem;color:var(--texte-sec);text-transform:uppercase;font-weight:700;margin-top:4px;">Voies</div>
+        </div>
+        <div style="text-align:center;padding:16px;background:var(--jaune-l);border-radius:10px;">
+          <div style="font-size:1.8rem;font-weight:800;color:var(--jaune-f);font-family:'JetBrains Mono',monospace;">${d.qrt_count.toLocaleString()}</div>
+          <div style="font-size:0.75rem;color:var(--texte-sec);text-transform:uppercase;font-weight:700;margin-top:4px;">Quartiers</div>
+        </div>
+      </div>
+      <div style="margin-top:12px;text-align:center;font-size:0.85rem;color:var(--texte-sec);">
+        Total : <strong style="color:var(--bleu);">${(d.voie_count+d.qrt_count).toLocaleString()}</strong> adresses à géocoder
+      </div>`;
+    renderTable('apercu-voie-table', d.apercu_voie, d.voie_cols);
+    document.getElementById('apercu-voie').style.display='block';
+    renderTable('apercu-qrt-table', d.apercu_qrt, d.qrt_cols);
+    document.getElementById('apercu-qrt').style.display='block';
+    document.getElementById('geo-config-card').style.display='block';
+    toast('Fichier RNVP chargé !');
+  }).catch(()=>{hideLoading();toast('Erreur','error');});
+}
+
+function lancerGeocodage() {
+  const ville=document.getElementById('geo-ville').value.trim()||'Casablanca';
+  const pays=document.getElementById('geo-pays').value.trim()||'Maroc';
+  document.getElementById('btn-geo').disabled=true;
+  document.getElementById('btn-stop').style.display='inline-flex';
+  document.getElementById('geo-progress-card').style.display='block';
+  document.getElementById('geo-done-card').style.display='none';
+  document.getElementById('geo-log').innerHTML='';
+  document.getElementById('geo-status').textContent='Connexion...';
+  debutTs=Date.now();
+  es=new EventSource(`/api/geocoder_stream?ville=${encodeURIComponent(ville)}&pays=${encodeURIComponent(pays)}`);
+  es.onmessage=e=>traiterMsg(JSON.parse(e.data));
+  es.onerror=()=>{stopperGeocodage();toast('Connexion interrompue — relancez pour reprendre','warning');};
+}
+
+function traiterMsg(m) {
+  if(m.type==='debut'){totalGeo=m.total;document.getElementById('compteur-val').textContent=`0 / ${m.total.toLocaleString()}`;document.getElementById('geo-status').textContent='En cours...';}
+  else if(m.type==='section'){ajouterLog(`\n── ${m.message}`, '#F9A825');}
+  else if(m.type==='progres'){
+    document.getElementById('prog-bar').style.width=m.pct+'%';
+    document.getElementById('pct-val').textContent=m.pct+'%';
+    document.getElementById('compteur-val').textContent=`${m.traites.toLocaleString()} / ${m.total.toLocaleString()}`;
+    document.getElementById('feuille-val').textContent=`Feuille : ${m.feuille}`;
+    document.getElementById('m-ok').textContent=m.n_ok;
+    document.getElementById('m-app').textContent=m.n_approx;
+    document.getElementById('m-err').textContent=m.n_echec;
+    if(m.traites>5){const e=(Date.now()-debutTs)/1000,v=m.traites/e,r=Math.round((m.total-m.traites)/v),h=Math.floor(r/3600),mn=Math.floor((r%3600)/60);document.getElementById('m-time').textContent=`${h}h${String(mn).padStart(2,'0')}`;}
+    const ic=m.statut==='OK'?'✅':m.statut==='APPROXIMATIF'?'⚠️':'❌';
+    const cl=m.statut==='OK'?'#4CAF50':m.statut==='APPROXIMATIF'?'#F9A825':'#F44336';
+    ajouterLog(`${ic} [${String(m.traites).padStart(5)}]  ${m.adresse}`, cl);
+  }
+  else if(m.type==='sauvegarde'){ajouterLog(`💾 Sauvegarde — ${m.fichier} (${m.nb} lignes)`,'#42A5F5');}
+  else if(m.type==='erreur'){ajouterLog(`❌ ${m.message}`,'#F44336');stopperGeocodage();toast(m.message,'error');}
+  else if(m.type==='termine'){
+    document.getElementById('prog-bar').style.width='100%';
+    document.getElementById('pct-val').textContent='100%';
+    document.getElementById('m-time').textContent='00:00';
+    document.getElementById('geo-status').textContent='✅ Terminé !';
+    ajouterLog('\n✅ GÉOCODAGE TERMINÉ !','#4CAF50');
+    stopperGeocodage();
+    document.getElementById('geo-done-card').style.display='block';
+    document.getElementById('geo-done-content').innerHTML=`
+      <div class="grid-4">
+        <div style="text-align:center;padding:16px;background:var(--bleu-l);border-radius:10px;"><div style="font-size:1.8rem;font-weight:800;color:var(--bleu);">${m.total_voie.toLocaleString()}</div><div style="font-size:0.72rem;color:var(--texte-sec);text-transform:uppercase;font-weight:700;">Voies</div></div>
+        <div style="text-align:center;padding:16px;background:var(--jaune-l);border-radius:10px;"><div style="font-size:1.8rem;font-weight:800;color:var(--jaune-f);">${m.total_qrt.toLocaleString()}</div><div style="font-size:0.72rem;color:var(--texte-sec);text-transform:uppercase;font-weight:700;">Quartiers</div></div>
+        <div style="text-align:center;padding:16px;background:var(--vert-l);border-radius:10px;"><div style="font-size:1.8rem;font-weight:800;color:var(--vert);">${m.taux}%</div><div style="font-size:0.72rem;color:var(--texte-sec);text-transform:uppercase;font-weight:700;">Taux succès</div></div>
+        <div style="text-align:center;padding:16px;background:var(--rouge-l);border-radius:10px;"><div style="font-size:1.8rem;font-weight:800;color:var(--rouge);">${m.n_echec}</div><div style="font-size:0.72rem;color:var(--texte-sec);text-transform:uppercase;font-weight:700;">Échecs</div></div>
+      </div>
+      <div class="alert alert-success" style="margin-top:14px;">✅ Fichiers sauvegardés dans <strong>data/</strong> — cette ville n'a plus besoin d'être géocodée.</div>`;
+    toast('Géocodage terminé !');
+  }
+}
+function ajouterLog(t,c='#E0E0E0'){const l=document.getElementById('geo-log');const d=document.createElement('div');d.style.color=c;d.textContent=t;l.appendChild(d);l.scrollTop=l.scrollHeight;}
+function stopperGeocodage(){if(es){es.close();es=null;}document.getElementById('btn-geo').disabled=false;document.getElementById('btn-stop').style.display='none';}
+</script>
+{% endblock %}

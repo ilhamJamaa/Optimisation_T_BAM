@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Import Colis{% endblock %}
+{% block page_title %}📦 Onglet 3 — Import Colis du Jour{% endblock %}
+{% block page_sub %}Chargez le fichier de distribution quotidien{% endblock %}
+{% block content %}
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header"><div class="card-icon">📂</div><div class="card-title">Charger le fichier colis</div></div>
+    <div class="upload-zone" id="colis-zone">
+      <input type="file" id="colis-input" accept=".xlsx,.xls,.csv">
+      <div class="upload-icon">📦</div>
+      <div class="upload-title">Glissez ou cliquez</div>
+      <div class="upload-sub">Formats : .xlsx, .xls, .csv</div>
+    </div>
+    <div id="colis-result" style="margin-top:14px;"></div>
+
+    <div style="margin-top:20px;">
+      <div style="font-size:0.82rem;font-weight:700;color:var(--bleu);margin-bottom:10px;">📋 Colonnes attendues</div>
+      <div style="background:var(--bleu-l);border-radius:8px;padding:14px;font-size:0.82rem;line-height:2;">
+        <span style="font-family:'JetBrains Mono',monospace;background:var(--bleu);color:white;padding:2px 8px;border-radius:4px;margin-right:6px;">CAB</span> Code à barres unique<br>
+        <span style="font-family:'JetBrains Mono',monospace;background:var(--bleu);color:white;padding:2px 8px;border-radius:4px;margin-right:6px;">NOM</span> Nom destinataire<br>
+        <span style="font-family:'JetBrains Mono',monospace;background:var(--bleu);color:white;padding:2px 8px;border-radius:4px;margin-right:6px;">TEL</span> Numéro téléphone<br>
+        <span style="font-family:'JetBrains Mono',monospace;background:var(--bleu);color:white;padding:2px 8px;border-radius:4px;margin-right:6px;">ADRESSE</span> Adresse livraison<br>
+        <span style="font-family:'JetBrains Mono',monospace;background:var(--bleu);color:white;padding:2px 8px;border-radius:4px;margin-right:6px;">CODE_POSTAL</span> Code postal<br>
+        <span style="font-family:'JetBrains Mono',monospace;background:var(--gris-m);color:white;padding:2px 8px;border-radius:4px;margin-right:6px;">POIDS</span> Poids (optionnel)
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-icon">📊</div><div class="card-title">Statistiques du jour</div></div>
+    <div id="colis-stats"><div style="color:var(--texte-sec);text-align:center;padding:32px;font-size:0.875rem;">Chargez un fichier pour voir les statistiques</div></div>
+  </div>
+</div>
+
+<div class="card" id="apercu-card" style="display:none;">
+  <div class="card-header">
+    <div class="card-icon">📋</div>
+    <div class="card-title">Aperçu des données</div>
+    <div style="margin-left:auto;">
+      <a href="{{ url_for('correction') }}" class="btn btn-primary btn-sm" id="btn-next" style="display:none;">🔧 Étape suivante →</a>
+    </div>
+  </div>
+  <div id="apercu-table"></div>
+</div>
+
+{% endblock %}
+{% block extra_js %}
+<script>
+initUploadZone('colis-zone','colis-input',uploadColis);
+function uploadColis(file) {
+  showLoading('Chargement du fichier colis...');
+  const fd=new FormData(); fd.append('file',file);
+  fetch('/api/upload_colis',{method:'POST',body:fd}).then(r=>r.json()).then(d=>{
+    hideLoading();
+    if(!d.success){document.getElementById('colis-result').innerHTML=`<div class="alert alert-error">❌ ${d.message}</div>`;return;}
+    document.getElementById('colis-result').innerHTML=`<div class="alert alert-success">✅ ${d.count} colis importés avec succès</div>`;
+    document.getElementById('colis-stats').innerHTML=`
+      <div class="metrics-grid" style="grid-template-columns:1fr 1fr;">
+        <div class="metric-card"><span class="metric-icon">📦</span><div><div class="metric-val">${d.count}</div><div class="metric-lbl">Total colis</div></div></div>
+        <div class="metric-card jaune"><span class="metric-icon">📊</span><div><div class="metric-val jaune">${d.columns.length}</div><div class="metric-lbl">Colonnes</div></div></div>
+      </div>
+      <div style="margin-top:14px;">
+        <div style="font-size:0.75rem;color:var(--texte-sec);text-transform:uppercase;font-weight:700;margin-bottom:8px;">Colonnes détectées</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">${d.columns.map(c=>`<span class="badge badge-info">${c}</span>`).join('')}</div>
+      </div>`;
+    renderTable('apercu-table', d.apercu);
+    document.getElementById('apercu-card').style.display='block';
+    document.getElementById('btn-next').style.display='inline-flex';
+    toast(`${d.count} colis importés !`);
+  }).catch(()=>{hideLoading();toast('Erreur','error');});
+}
+</script>
+{% endblock %}
