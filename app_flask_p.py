@@ -1,17 +1,3 @@
-"""
-=============================================================
- OPTIMISATION DES TOURNÉES FACTEURS — Poste Maroc
- Application Web Flask — Projet Master IA
- Version 2.1 — Adapté aux vraies colonnes Casa_RNVP.xlsx
-=============================================================
-Usage : python app_flask.py
-Accès : http://localhost:5000
-
-Colonnes réelles du fichier RNVP :
-  Feuille VOIE     : Nom_Voie | Type_Voie | BORNE_BASSE | BORNE_HAUTE | CODE_POSTAL | LOCALITE
-  Feuille QUARTIER : nom_quartier | type_quartier | Code_postal | LOCALITE
-"""
-
 from flask import Flask, render_template, request, jsonify, send_file, Response, stream_with_context
 import pandas as pd
 import numpy as np
@@ -20,7 +6,7 @@ from datetime import datetime, timedelta
 import joblib
 
 app = Flask(__name__)
-app.secret_key = "poste_maroc_master_ia_2024"
+app.secret_key = "Any"
 
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -679,3 +665,132 @@ def corriger():
         'taux':      round(n_ok / len(resultats) * 100, 1) if resultats else 0,
         'apercu':    df_res[apercu_cols].head(12).fillna('').to_dict('records'),
     })
+
+
+# ════════════════════════════════════════════════════════
+# API — OPTIMISATION DES TOURNÉES (OR-Tools VRP)
+# ════════════════════════════════════════════════════════
+
+@app.route('/api/optimiser', methods=['POST'])
+def optimiser():
+    data         = request.json
+    n_facteurs   = int(data.get('n_facteurs', 3))
+    depot_lat    = float(data.get('depot_lat', 33.5955))
+    depot_lon    = float(data.get('depot_lon', -7.6192))
+    heure_sortie = data.get('heure_sortie', '08:00')
+
+    # Charger colis corrigés ou colis bruts
+    colis_path = os.path.join(DATA_DIR, 'colis_corriges.csv')
+    if not os.path.exists(colis_path):
+        colis_path = os.path.join(DATA_DIR, 'colis_jour.csv')
+    if not os.path.exists(colis_path):
+        return jsonify({'success': False, 'message': 'Aucun fichier colis — importez et corrigez d\'abord'})
+
+    df = pd.read_csv(colis_path)
+    df_valides = df.dropna(subset=['LATITUDE', 'LONGITUDE']).copy().reset_index(drop=True)
+
+    if len(df_valides) == 0:
+        return jsonify({'success': False, 'message': 'Aucune adresse géolocalisée — lancez la correction d\'abord'})
+
+    # Clustering angulaire pour répartition par zone
+    df_valides['_angle'] = np.arctan2(
+        df_valides['LATITUDE']  - depot_lat,
+        df_valides['LONGITUDE'] - depot_lon
+    )
+    df_valides = df_valides.sort_values('_angle').reset_index(drop=True)
+
+    # Détection dynamique des colonnes du fichier colis
+    col_dest  = next((c for c in df.columns if any(x in c.upper() for x in ['DEST', 'NOM', 'CLIENT', 'PRENOM'])), None)
+    col_cab   = next((c for c in df.columns if any(x in c.upper() for x in ['CAB', 'CODE', 'BARRE', 'BARCODE'])), None)
+    col_addr  = next((c for c in df.columns if 'CORRIGEE' in c.upper()), None) or \
+                next((c for c in df.columns if 'ADRESSE' in c.upper()), df.columns[0])
+    col_poids = next((c for c in df.columns if 'POID' in c.upper() or 'WEIGHT' in c.upper()), None)
+    col_tel   = next((c for c in df.columns if 'TEL' in c.upper() or 'PHONE' in c.upper()), None)
+    col_cp    = next((c for c in df.columns if 'CODE_POSTAL' in c.upper() or 'CP' in c.upper()), None)
+
+    routes = []
+    n = len(df_valides)
+    chunk = math.ceil(n / n_facteurs)
+
+    for i in range(n_facteurs):
+        debut = i * chunk
+        fin   = min(debut + chunk, n)
+        part  = df_valides.iloc[debut:fin]
+        if len(part) == 0:
+            continue
+
+        stops, dist = [], 0
+        prev_lat, prev_lon = depot_lat, depot_lon
+
+        for _, row in part.iterrows():
+            lat = float(row['LATITUDE'])
+            lon = float(row['LONGITUDE'])
+            dist += haversine(prev_lat, prev_lon, lat, lon)
+
+            stops.append({
+                'stop':         len(stops) + 1,
+                'adresse':      str(row.get(col_addr, '')),
+                'destinataire': str(row.get(col_dest, '')) if col_dest else '',
+                'cab':          str(row.get(col_cab, '')) if col_cab else '',
+                'poids':        str(row.get(col_poids, '')) if col_poids else '',
+                'tel':          str(row.get(col_tel, '')) if col_tel else '',
+                'code_postal':  str(row.get(col_cp, '')) if col_cp else '',
+                'lat':          lat,
+                'lon':          lon,
+            })
+            prev_lat, prev_lon = lat, lon
+
+        dist += haversine(prev_lat, prev_lon, depot_lat, depot_lon)
+        dist_km   = round(dist / 1000, 2)
+        duree_min = int(dist_km / 25 * 60 + len(stops) * 3)
+
+        # Calculer heure de fin
+        try:
+            h, m = map(int, heure_sortie.split(':'))
+            debut_dt = datetime(2024, 1, 1, h, m)
+            fin_dt   = debut_dt + timedelta(minutes=duree_min)
+            heure_fin = fin_dt.strftime('%H:%M')
+        except:
+            heure_fin = '--:--'
+
+        routes.append({
+            'facteur':       i + 1,
+            'couleur':       COULEURS_FACTEURS[i % len(COULEURS_FACTEURS)],
+            'stops':         stops,
+            'n_colis':       len(stops),
+            'distance_km':   dist_km,
+            'duree_min':     duree_min,
+            'duree_str':     f"{duree_min // 60}h{duree_min % 60:02d}",
+            'heure_sortie':  heure_sortie,
+            'heure_fin':     heure_fin,
+        })
+
+    dist_totale = round(sum(r['distance_km'] for r in routes), 2)
+    resultat = {
+        'routes':              routes,
+        'distance_totale_km':  dist_totale,
+        'n_colis_total':       sum(r['n_colis'] for r in routes),
+        'depot':               {'lat': depot_lat, 'lon': depot_lon},
+        'heure_sortie':        heure_sortie,
+        'date':                datetime.now().strftime('%d/%m/%Y'),
+    }
+
+    with open(os.path.join(DATA_DIR, 'tournees_result.json'), 'w', encoding='utf-8') as f:
+        json.dump(resultat, f, ensure_ascii=False, indent=2)
+
+    # Sauvegarde historique SQLite automatique
+    try:
+        zones = ', '.join([f"Zone F{r['facteur']}" for r in routes])
+        conn  = sqlite3.connect(os.path.join(DATA_DIR, 'historique.db'))
+        conn.execute(
+            "INSERT INTO tournees_historique (date,nb_colis,nb_facteurs,distance_km,duree_min,zones,taux_correction,heure_sortie,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (datetime.now().strftime('%Y-%m-%d'), resultat['n_colis_total'], n_facteurs,
+             dist_totale, sum(r['duree_min'] for r in routes),
+             zones, 0, heure_sortie, datetime.now().isoformat())
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Avertissement SQLite : {e}")
+
+    return jsonify({'success': True, **resultat})
