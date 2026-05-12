@@ -15,18 +15,10 @@ os.makedirs(DATA_DIR, exist_ok=True)
 # COLONNES RÉELLES DU FICHIER Casa_RNVP.xlsx
 # ════════════════════════════════════════════════════════
 # Feuille VOIE
-COL_VOIE_NOM      = 'Nom_Voie'       # Nom de la voie
-COL_VOIE_TYPE     = 'Type_Voie'      # Type (RUE, BOULEVARD, AVENUE...)
-COL_VOIE_BB       = 'BORNE_BASSE'    # Borne basse (numéro début)
-COL_VOIE_BH       = 'BORNE_HAUTE'    # Borne haute (numéro fin)
-COL_VOIE_CP       = 'CODE_POSTAL'    # Code postal
-COL_VOIE_LOC      = 'LOCALITE'       # Localité (CASABLANCA...)
+# ------- ICI diff col 
 
 # Feuille QUARTIER
-COL_QRT_NOM       = 'nom_quartier'   # Nom du quartier
-COL_QRT_TYPE      = 'type_quartier'  # Type (LOTISSEMENT, DERB, IMMEUBLE...)
-COL_QRT_CP        = 'Code_postal'    # Code postal
-COL_QRT_LOC       = 'LOCALITE'       # Localité
+# ------- ICI diff col
 
 # Noms des feuilles Excel
 SHEET_VOIE        = 'VOIE'
@@ -41,9 +33,7 @@ def init_db():
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS tournees_historique (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT, nb_colis INTEGER, nb_facteurs INTEGER,
-        distance_km REAL, duree_min INTEGER,
-        zones TEXT, taux_correction REAL,
+        date TEXT, nb_colis INTEGER, taux_correction REAL,
         heure_sortie TEXT, created_at TEXT
     )''')
     c.execute('''CREATE TABLE IF NOT EXISTS colis_historique (
@@ -149,16 +139,16 @@ def index():
     tournees_ok  = os.path.exists(os.path.join(DATA_DIR, 'tournees_result.json'))
 
     stats = {
-        'rnvp_voie_ok':   rnvp_voie_ok,
-        'rnvp_qrt_ok':    rnvp_qrt_ok,
-        'colis_ok':       colis_ok,
+        'rnvp-_voie_ok':   rnvp_voie_ok,
+        'rnvp-_qrt_ok':    rnvp_qrt_ok,
+        'colis-_ok':       colis_ok,
         'corriges_ok':    corriges_ok,
-        'tournees_ok':    tournees_ok,
-        'rnvp_voie_count': 0,
-        'rnvp_qrt_count':  0,
-        'colis_count':     0,
+        'tournees-_ok':    tournees_ok,
+        'rnvp-_voie_count': 0,
+        'rnvp_qrt-_count':  0,
+        'colis__count':     0,
         'nb_jours':        0,
-        'total_colis':     0,
+        'total__colis':     0,
     }
     if rnvp_voie_ok:
         stats['rnvp_voie_count'] = len(pd.read_csv(os.path.join(DATA_DIR, 'rnvp_voie_geocoded.csv')))
@@ -179,19 +169,19 @@ def index():
 
 @app.route('/rnvp')
 def rnvp():
-    return render_template('rnvp.html')
+    return render_template('rnv.html')
 
 @app.route('/colis')
 def colis():
-    return render_template('colis.html')
+    return render_template('coli.html')
 
 @app.route('/correction')
 def correction():
-    return render_template('correction.html')
+    return render_template('corre.html')
 
 @app.route('/optimisation')
 def optimisation():
-    return render_template('optimisation.html')
+    return render_template('optimi.html')
 
 @app.route('/carte')
 def carte():
@@ -301,7 +291,7 @@ def geocoder_une(adresse_geocodage, ville, pays):
     """
     try:
         from geopy.geocoders import Nominatim
-        geo = Nominatim(user_agent="poste_maroc_rnvp_v2")
+        geo = Nominatim(user_agent="pp_m_r_v2")
 
         def tenter(query):
             try:
@@ -347,15 +337,15 @@ def geocoder_une(adresse_geocodage, ville, pays):
 
 @app.route('/api/geocoder_stream')
 def geocoder_stream():
-    ville = request.args.get('ville', 'Casablanca')
-    pays  = request.args.get('pays', 'Maroc')
+    ville = request.args.get('ville', 'v')
+    pays  = request.args.get('pays', 'p')
 
     def generer():
         voie_path = os.path.join(DATA_DIR, 'rnvp_voie_raw.csv')
         qrt_path  = os.path.join(DATA_DIR, 'rnvp_quartier_raw.csv')
 
         if not os.path.exists(voie_path):
-            yield f"data: {json.dumps({'type':'erreur','message':'Fichier RNVP non trouvé — chargez d abord le fichier xlsx'})}\n\n"
+            yield f"data: {json.dumps({'type':'erreur','message':'Fichier RNV non trouvé — chargez d abord le fichier xlsx'})}\n\n"
             return
 
         df_voie = pd.read_csv(voie_path)
@@ -520,9 +510,9 @@ def upload_colis():
 def corriger():
     seuil = float(request.json.get('seuil', 75))
 
-    colis_path = os.path.join(DATA_DIR, 'colis_jour.csv')
-    voie_path  = os.path.join(DATA_DIR, 'rnvp_voie_geocoded.csv')
-    qrt_path   = os.path.join(DATA_DIR, 'rnvp_quartier_geocoded.csv')
+    colis_path = os.path.join(DATA_DIR, 'c_j.csv')
+    voie_path  = os.path.join(DATA_DIR, 'r_v_geo.csv')
+    qrt_path   = os.path.join(DATA_DIR, 'r_q_geo.csv')
 
     if not os.path.exists(colis_path):
         return jsonify({'success': False, 'message': 'Fichier colis non trouvé — importez d\'abord le fichier du jour'})
@@ -531,7 +521,7 @@ def corriger():
 
     # Détecter colonne adresse dans le fichier colis
     col_addr = next(
-        (c for c in df_colis.columns if any(x in c.upper() for x in ['ADRESSE', 'ADRESS', 'RUE', 'VOIE', 'DEST'])),
+        (c for c in df_colis.columns if any(x in c.upper() for x in ['AD', 'A', 'R', 'V', 'D'])),
         df_colis.columns[min(2, len(df_colis.columns) - 1)]
     )
 
@@ -565,7 +555,7 @@ def corriger():
                             'lat':     float(row['LATITUDE']),
                             'lon':     float(row['LONGITUDE']),
                             'adresse': addr_geo,
-                            'cp':      str(row.get(COL_VOIE_CP, '')),
+                            'cp':      str(row.get(COL_V_C, '')),
                         }
 
     # Depuis QUARTIER géocodé
@@ -620,9 +610,9 @@ def corriger():
 
             resultats.append({
                 **row.to_dict(),
-                'ADRESSE_ORIGINALE': addr_orig,
-                'ADRESSE_CORRIGEE':  gps_info.get('adresse', addr_orig),
-                'CODE_POSTAL_RNVP':  gps_info.get('cp', ''),
+                'ADR_O': addr_orig,
+                'ADR_C':  gps_info.get('adresse', addr_orig),
+                'C_POST_R':  gps_info.get('cp', ''),
                 'SCORE_FUZZY':       round(score, 1),
                 'STATUT':            statut,
                 'LATITUDE':          gps_info.get('lat'),
